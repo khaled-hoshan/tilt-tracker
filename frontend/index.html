@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Tilt Tracker — Method Comparison</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: #0f1117;
+      color: #e0e0e0;
+      font-family: 'Segoe UI', sans-serif;
+    }
+    h1 {
+      text-align: center;
+      padding: 20px 0 0;
+      font-size: 1.2rem;
+      color: #90caf9;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+    }
+    /* Side-by-side layout for the two visualization panels */
+    #panels {
+      display: flex;
+      justify-content: center;
+      gap: 30px;
+      padding: 20px;
+      flex-wrap: wrap;
+    }
+    .panel {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .panel h2 {
+      font-size: 0.9rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin: 0 0 8px;
+    }
+    .panel h2 span {
+      font-size: 0.75rem;
+      color: #888;
+      display: block;
+      font-weight: normal;
+      text-transform: none;
+      letter-spacing: 0;
+    }
+    /* Method 1 title in orange to visually distinguish */
+    #label-trig  { color: #ffab40; }
+    /* Method 2 title in blue */
+    #label-madgw { color: #4fc3f7; }
+
+    canvas { border-radius: 8px; background: transparent; }
+
+    /* Angle readouts below each canvas */
+    .stats {
+      display: flex;
+      gap: 24px;
+      margin-top: 12px;
+    }
+    .stat { text-align: center; }
+    .stat .label {
+      font-size: 0.7rem;
+      color: #666;
+      text-transform: uppercase;
+    }
+    .stat .value {
+      font-size: 1.4rem;
+      font-weight: bold;
+    }
+    .trig-value  { color: #ffab40; }
+    .madgw-value { color: #4fc3f7; }
+
+    #status {
+      text-align: center;
+      font-size: 0.75rem;
+      color: #4caf50;
+      padding-bottom: 16px;
+    }
+  </style>
+</head>
+<body>
+
+<h1>Real-Time Orientation Tracker</h1>
+
+<div id="panels">
+
+  <!-- ── Method 1: Direct Trigonometry ─────────────────────────── -->
+  <div class="panel">
+    <h2 id="label-trig">
+      Method 1: Direct Trigonometry
+      <span>Accelerometer only — atan2 on gravity components</span>
+    </h2>
+    <canvas id="canvas-trig" width="500" height="320"></canvas>
+    <div class="stats">
+      <div class="stat">
+        <div class="label">Roll</div>
+        <div class="value trig-value" id="trig-roll">0.00°</div>
+      </div>
+      <div class="stat">
+        <div class="label">Pitch</div>
+        <div class="value trig-value" id="trig-pitch">0.00°</div>
+      </div>
+      <div class="stat">
+        <div class="label">Yaw</div>
+        <div class="value" style="color:#555;font-size:0.9rem">N/A</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Method 2: Madgwick Filter ─────────────────────────────── -->
+  <div class="panel">
+    <h2 id="label-madgw">
+      Method 2: Madgwick Filter
+      <span>Accelerometer + Gyroscope fusion — quaternion based</span>
+    </h2>
+    <canvas id="canvas-madgw" width="500" height="320"></canvas>
+    <div class="stats">
+      <div class="stat">
+        <div class="label">Roll</div>
+        <div class="value madgw-value" id="madgw-roll">0.00°</div>
+      </div>
+      <div class="stat">
+        <div class="label">Pitch</div>
+        <div class="value madgw-value" id="madgw-pitch">0.00°</div>
+      </div>
+      <div class="stat">
+        <div class="label">Yaw</div>
+        <div class="value madgw-value" id="madgw-yaw">0.00°</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div id="status">⚡ Connecting to backend...</div>
+
+<!-- Three.js r128 from CDN — no install needed -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// ════════════════════════════════════════════════════════════════════
+// Three.js Scene Factory
+// We create two identical scenes — one for each method.
+// Each scene has: renderer → canvas, a 3D box, a grid, lights.
+// ════════════════════════════════════════════════════════════════════
+function createScene(canvasId) {
+  const canvas   = document.getElementById(canvasId);
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  renderer.setSize(canvas.width, canvas.height);
+
+  const scene  = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(
+    50, canvas.width / canvas.height, 0.1, 100
+  );
+  camera.position.set(0, 1.5, 4);
+  camera.lookAt(0, 0, 0);
+
+  // Lighting
+  scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+  const dir = new THREE.DirectionalLight(0xffffff, 1.0);
+  dir.position.set(5, 5, 5);
+  scene.add(dir);
+
+  // 3D box — dimensions roughly match a Black Pill PCB
+  const geo = new THREE.BoxGeometry(3, 0.25, 2);
+  const mat = [
+    new THREE.MeshPhongMaterial({ color: 0x1565c0 }),
+    new THREE.MeshPhongMaterial({ color: 0x1565c0 }),
+    new THREE.MeshPhongMaterial({ color: 0x0d47a1 }),
+    new THREE.MeshPhongMaterial({ color: 0x0d47a1 }),
+    new THREE.MeshPhongMaterial({ color: 0x1565c0 }),
+    new THREE.MeshPhongMaterial({ color: 0x1565c0 }),
+  ];
+  const box = new THREE.Mesh(geo, mat);
+  scene.add(box);
+
+  // Horizon grid for visual reference
+  scene.add(new THREE.GridHelper(8, 8, 0x333333, 0x222222));
+
+  return { renderer, scene, camera, box };
+}
+
+// Create both scenes
+const trigScene  = createScene('canvas-trig');
+const madgwScene = createScene('canvas-madgw');
+
+// Current angles for each method (updated via WebSocket)
+let trig  = { r: 0, p: 0 };
+let madgw = { r: 0, p: 0, y: 0 };
+
+// ── Render loop ───────────────────────────────────────────────────────
+// requestAnimationFrame runs at ~60fps continuously.
+// We just apply the latest angles every frame.
+function animate() {
+  requestAnimationFrame(animate);
+
+  // Method 1: trig only has roll and pitch (no yaw without magnetometer)
+  trigScene.box.rotation.set(
+    trig.p * Math.PI / 180,
+    0,
+    trig.r * Math.PI / 180,
+    'ZYX'
+  );
+  trigScene.renderer.render(trigScene.scene, trigScene.camera);
+
+  // Method 2: Madgwick has full roll, pitch, yaw
+  madgwScene.box.rotation.set(
+    madgw.p * Math.PI / 180,
+    madgw.y * Math.PI / 180,
+    madgw.r * Math.PI / 180,
+    'ZYX'
+  );
+  madgwScene.renderer.render(madgwScene.scene, madgwScene.camera);
+}
+animate();
+
+// ── WebSocket — receive live data from FastAPI backend ─────────────────
+function connect() {
+  const ws = new WebSocket(`ws://${location.host}/ws`);
+
+  ws.onopen = () => {
+    document.getElementById('status').textContent = '🟢 Live — receiving data from STM32';
+  };
+
+  ws.onmessage = (event) => {
+    const d = JSON.parse(event.data);
+
+    // Update angle variables (animate() will use them on next frame)
+    trig.r  = d.tr;   trig.p  = d.tp;
+    madgw.r = d.mr;   madgw.p = d.mp;   madgw.y = d.my;
+
+    // Update the numeric readouts
+    document.getElementById('trig-roll').textContent   = d.tr.toFixed(2) + '°';
+    document.getElementById('trig-pitch').textContent  = d.tp.toFixed(2) + '°';
+    document.getElementById('madgw-roll').textContent  = d.mr.toFixed(2) + '°';
+    document.getElementById('madgw-pitch').textContent = d.mp.toFixed(2) + '°';
+    document.getElementById('madgw-yaw').textContent   = d.my.toFixed(2) + '°';
+  };
+
+  ws.onclose = () => {
+    document.getElementById('status').textContent = '🔴 Disconnected — retrying in 2s...';
+    setTimeout(connect, 2000);    // Auto-reconnect
+  };
+}
+connect();
+</script>
+</body>
+</html>

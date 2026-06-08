@@ -1,0 +1,19 @@
+# Python
+backend/venv/
+__pycache__/
+*.pyc
+*.pyo
+.env
+
+# PlatformIO build artifacts (these are large and auto-generated)
+firmware/.pio/
+*.elf
+*.bin
+*.map
+
+# VS Code
+.vscode/
+
+# OS junk
+.DS_Store
+Thumbs.db
