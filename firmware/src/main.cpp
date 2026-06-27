@@ -3,7 +3,6 @@
 #include "mpu6050.h"
 #include "madgwick.h"
 
-#define RAD_TO_DEG 57.2957795f
 
 /* ══════════════════════════════════════════════════════════════════════
  * STATE MACHINE
@@ -118,11 +117,11 @@ void loop() {
         Serial.println("{\"error\":\"MPU6050 read failed.\"}");
         return;
     }*/
+    /* ── Read raw sensor data ──────────────────────────────────────── */
     uint8_t retries = 0;
     while (!MPU6050_Read(&sensor)) {
         retries++;
         if (retries >= 3) {
-            // Try to re-init the sensor before declaring error
             if (!MPU6050_Init()) {
                 state = STATE_ERROR;
                 Serial.println("{\"error\":\"MPU6050 read failed.\"}");
@@ -132,7 +131,8 @@ void loop() {
         }
         delay(5);
     }
-    /* ══════════════════════════════════════════════════════════════
+
+/* ══════════════════════════════════════════════════════════════
      * METHOD 1: DIRECT TRIGONOMETRY
      * ══════════════════════════════════════════════════════════════
      * Uses ONLY the accelerometer.
@@ -153,12 +153,12 @@ void loop() {
      * LIMITATION: when the board moves, the accelerometer picks up
      * the motion acceleration too, not just gravity. This makes
      * the angles noisy and wrong during movement.                   */
-    float trig_roll  = atan2f(sensor.ay, sensor.az) * RAD_TO_DEG;
+    float trig_roll  = atan2f(sensor.ay, sensor.az) * 57.2957795f;
 
     float trig_pitch = atan2f(-sensor.ax,
                                sqrtf(sensor.ay * sensor.ay +
                                      sensor.az * sensor.az))
-                       * RAD_TO_DEG;
+                       * 57.2957795f;      
 
     /* ══════════════════════════════════════════════════════════════
      * METHOD 2: MADGWICK FILTER
@@ -176,16 +176,10 @@ void loop() {
     );
     madgwick_angles = Madgwick_GetEuler();
 
-    /* ── Transmit both results as one JSON line ──────────────────────
-     * Format: {"tr":roll,"tp":pitch,"mr":roll,"mp":pitch,"my":yaw}
-     *   t_ prefix = trig method
-     *   m_ prefix = madgwick method
-     *
-     * Newline \n is the packet delimiter — the Python backend
-     * calls readline() which reads exactly one line at a time.      */
+    /* ── Transmit JSON ────────────────────────────────────────────── */
     char buffer[128];
-    snprintf(buffer, sizeof(buffer), 
-        "{\"tr\":%.2f,\"tp\":%.2f,\"mr\":%.2f,\"mp\":%.2f,\"my\":%.2f}", 
-        trig_roll, trig_pitch, madgwick_angles.roll, madgwick_angles.pitch, madgwick_angles.yaw);
-    Serial.println(buffer);
+        snprintf(buffer, sizeof(buffer), 
+            "{\"tr\":%.2f,\"tp\":%.2f,\"mr\":%.2f,\"mp\":%.2f,\"my\":%.2f}\n", 
+            trig_roll, trig_pitch, madgwick_angles.roll, madgwick_angles.pitch, madgwick_angles.yaw);
+    Serial.print(buffer);
 }

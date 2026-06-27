@@ -54,7 +54,7 @@ void Madgwick_Update(float gx, float gy, float gz,
     qDot1 = 0.5f * ( q0*gx + q2*gz - q3*gy);
     qDot2 = 0.5f * ( q0*gy - q1*gz + q3*gx);
     qDot3 = 0.5f * ( q0*gz + q1*gy - q2*gx);
-f
+
     /* ── Step 3: Accelerometer correction ───────────────────────────
      * We only use the accelerometer when it gives a valid reading.
      * During free-fall or high vibration, its magnitude would be

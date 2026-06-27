@@ -28,12 +28,13 @@ bool MPU6050_Init() {
      * WHO_AM_I is a read-only register that always returns 0x68.
      * If we get something else, the sensor isn't connected or
      * the wiring is wrong.                                           */
-   /*Wire.beginTransmission(MPU6050_ADDR);
+    Wire.beginTransmission(MPU6050_ADDR);
     uint8_t err = Wire.endTransmission();
-    if (err != 0) return false;*/ 
+    if (err != 0) return false;
     
-    uint8_t id = readReg(MPU6050_REG_WHO_AM_I);
-    if (id != 0x68) return false;
+    // uint8_t id = readReg(MPU6050_REG_WHO_AM_I);
+    // if (id != 0x68) return false;
+    
     /* ── Wake the sensor up ─────────────────────────────────────────
      * After power-on the MPU6050 is in SLEEP mode by default.
      * Writing 0x00 to PWR_MGMT_1 clears the SLEEP bit (bit 6)
