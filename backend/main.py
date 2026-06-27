@@ -48,47 +48,48 @@ async def serial_reader():
     handle WebSocket connections at the same time.
     """
     global latest
-
-    port = find_stm32_port()
-    print(f"[serial] Opening {port} at 115200 baud")
-    ser = serial.Serial(port, baudrate=115200, timeout=1)
-
     loop = asyncio.get_event_loop()
 
     while True:
         try:
-            # readline() blocks until \n arrives — run in thread pool
-            raw = await loop.run_in_executor(None, ser.readline)
-            line = raw.decode("utf-8").strip()
+            port = find_stm32_port()
+            print(f"[serial] Opening {port} at 115200 baud")
 
-            if not line:
-                continue
+            # Using 'with' ensures the port closes cleanly if it crashes
+            with serial.Serial(port, baudrate=115200, timeout=1) as ser:
+                while True:
+                    raw = await loop.run_in_executor(None, ser.readline)
 
-            data = json.loads(line)
+                    # If device drops, readline may return empty bytes on timeout
+                    if not raw and not ser.is_open:
+                        raise serial.SerialException("Device disconnected")
 
-            # Skip non-data messages like {"status":"ready"}
-            if "tr" not in data:
-                continue
+                    line = raw.decode("utf-8").strip()
 
-            latest = data
+                    if not line:
+                        continue
 
-            # Broadcast to every connected browser
-            disconnected = []
-            for ws in clients:
-                try:
-                    await ws.send_json(data)
-                except Exception:
-                    disconnected.append(ws)    # Client disconnected
+                    data = json.loads(line)
 
-            for ws in disconnected:
-                clients.remove(ws)
+                    if "tr" not in data:
+                        continue
 
-        except json.JSONDecodeError:
-            pass    # Ignore incomplete packets during startup/reset
+                    latest = data
+
+                    disconnected = []
+                    for ws in clients:
+                        try:
+                            await ws.send_json(data)
+                        except Exception:
+                            disconnected.append(ws)
+
+                    for ws in disconnected:
+                        if ws in clients:
+                            clients.remove(ws)
 
         except Exception as e:
-            print(f"[serial] Error: {e}")
-            await asyncio.sleep(1)    # Brief pause before retrying
+            print(f"[serial] Error: {e}. Retrying in 2 seconds...")
+            await asyncio.sleep(2)
 
 
 @asynccontextmanager
@@ -110,15 +111,17 @@ async def websocket_endpoint(websocket: WebSocket):
     can push new data to it whenever a packet arrives from the STM32.
     """
     await websocket.accept()
-    clients.append(websocket)
+    if websocket not in clients:
+        clients.append(websocket)
     try:
-        # Send the latest reading immediately so the page isn't blank
         await websocket.send_json(latest)
-        # Keep the connection alive until the browser disconnects
+        # Actively listen to catch the native disconnect event
         while True:
-            await asyncio.sleep(30)
+            await websocket.receive_text()
     except WebSocketDisconnect:
-        clients.remove(websocket)
+        # Check existence to avoid ValueError if serial_reader already removed it
+        if websocket in clients:
+            clients.remove(websocket)
 
 
 @app.get("/api/latest")
