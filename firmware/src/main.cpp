@@ -100,8 +100,14 @@ void loop() {
      * Using real elapsed time (not a fixed delay) makes the Madgwick
      * filter more accurate because dt is always correct even if the
      * I2C read took slightly longer than expected.                   */
+    /* ── True Non-Blocking Timer (Target: 100Hz) ──────────────────── */
     uint32_t now = millis();
-    dt = (now - lastTick) / 1000.0f;    // ms → seconds
+    if (now - lastTick < 10) {
+        return; // Yield CPU until 10ms have passed
+    }
+    
+    // Compute exact elapsed time since the last successful execution
+    dt = (now - lastTick) / 1000.0f;    
     lastTick = now;
 
     /* ── Read raw sensor data ────────────────────────────────────────
@@ -182,13 +188,4 @@ void loop() {
         "{\"tr\":%.2f,\"tp\":%.2f,\"mr\":%.2f,\"mp\":%.2f,\"my\":%.2f}", 
         trig_roll, trig_pitch, madgwick_angles.roll, madgwick_angles.pitch, madgwick_angles.yaw);
     Serial.println(buffer);
-
-    /* Instead of a delay(10),
-    implement a non-blocking timer check
-    to ensure the loop executes as close
-    to a consistent 10ms interval as possible. */
-    static uint32_t lastLoopTime = 0;
-    while (millis() - lastLoopTime < 10) {
-    }
-    lastLoopTime = millis();
 }

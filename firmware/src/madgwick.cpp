@@ -60,7 +60,7 @@ void Madgwick_Update(float gx, float gy, float gz,
      * During free-fall or high vibration, its magnitude would be
      * far from 1g, meaning it's not measuring gravity reliably.      */
     float accelMag = sqrtf(ax*ax + ay*ay + az*az);
-    if (accelMag > 0.0f) {
+    if (accelMag > 0.5f && accelMag < 1.5f) {
 
         /* Normalize: we only care about the DIRECTION of gravity,
          * not its magnitude. Dividing by magnitude gives unit vector */
