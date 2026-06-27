@@ -17,3 +17,4 @@ firmware/.pio/
 # OS junk
 .DS_Store
 Thumbs.db
+backend.log
