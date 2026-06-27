@@ -3,6 +3,8 @@
 #include "mpu6050.h"
 #include "madgwick.h"
 
+#define RAD_TO_DEG 57.2957795f
+
 /* ══════════════════════════════════════════════════════════════════════
  * STATE MACHINE
  * ══════════════════════════════════════════════════════════════════════
@@ -112,15 +114,15 @@ void loop() {
     }*/
     uint8_t retries = 0;
     while (!MPU6050_Read(&sensor)) {
-    retries++;
-    if (retries >= 3) {
-        // Try to re-init the sensor before declaring error
-        if (!MPU6050_Init()) {
-            state = STATE_ERROR;
-            Serial.println("{\"error\":\"MPU6050 read failed.\"}");
-            return;
-        }
-        retries = 0;
+        retries++;
+        if (retries >= 3) {
+            // Try to re-init the sensor before declaring error
+            if (!MPU6050_Init()) {
+                state = STATE_ERROR;
+                Serial.println("{\"error\":\"MPU6050 read failed.\"}");
+                return;
+            }
+            retries = 0;
         }
         delay(5);
     }
@@ -145,12 +147,12 @@ void loop() {
      * LIMITATION: when the board moves, the accelerometer picks up
      * the motion acceleration too, not just gravity. This makes
      * the angles noisy and wrong during movement.                   */
-    float trig_roll  = atan2f(sensor.ay, sensor.az) * 57.2957795f;
+    float trig_roll  = atan2f(sensor.ay, sensor.az) * RAD_TO_DEG;
 
     float trig_pitch = atan2f(-sensor.ax,
                                sqrtf(sensor.ay * sensor.ay +
                                      sensor.az * sensor.az))
-                       * 57.2957795f;
+                       * RAD_TO_DEG;
 
     /* ══════════════════════════════════════════════════════════════
      * METHOD 2: MADGWICK FILTER
@@ -175,13 +177,18 @@ void loop() {
      *
      * Newline \n is the packet delimiter — the Python backend
      * calls readline() which reads exactly one line at a time.      */
-    Serial.print("{\"tr\":");  Serial.print(trig_roll,           2);
-    Serial.print(",\"tp\":"); Serial.print(trig_pitch,          2);
-    Serial.print(",\"mr\":"); Serial.print(madgwick_angles.roll, 2);
-    Serial.print(",\"mp\":"); Serial.print(madgwick_angles.pitch,2);
-    Serial.print(",\"my\":"); Serial.print(madgwick_angles.yaw,  2);
-    Serial.println("}");
+    char buffer[128];
+    snprintf(buffer, sizeof(buffer), 
+        "{\"tr\":%.2f,\"tp\":%.2f,\"mr\":%.2f,\"mp\":%.2f,\"my\":%.2f}", 
+        trig_roll, trig_pitch, madgwick_angles.roll, madgwick_angles.pitch, madgwick_angles.yaw);
+    Serial.println(buffer);
 
-    /* 10ms delay → ~100Hz loop rate */
-    delay(10);
+    /* Instead of a delay(10),
+    implement a non-blocking timer check
+    to ensure the loop executes as close
+    to a consistent 10ms interval as possible. */
+    static uint32_t lastLoopTime = 0;
+    while (millis() - lastLoopTime < 10) {
+    }
+    lastLoopTime = millis();
 }
