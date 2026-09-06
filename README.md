@@ -1,87 +1,198 @@
-# 🧭 Tilt Tracker: Real-Time IMU Orientation Dashboard
+# Tilt Tracker — Real-Time IMU Orientation Dashboard
 
 A full-stack embedded systems project that streams real-time orientation data from an STM32 microcontroller to a live 3D browser dashboard.
 
-This project demonstrates **hardware interfacing, sensor fusion mathematics, and real-time data pipelines** by visually comparing two different tilt-calculation methods side-by-side: raw accelerometer trigonometry vs. a Madgwick quaternion filter.
+The project compares two orientation-estimation approaches side by side:
 
----
+- **Direct accelerometer trigonometry** using `atan2()`
+- **Madgwick sensor fusion** using accelerometer + gyroscope data
 
-## 🚀 Project Overview
+The system demonstrates hardware interfacing, sensor-fusion mathematics, embedded timing, USB serial communication, asynchronous backend processing, WebSockets, and browser-based 3D visualization.
+
+## Overview
+
+### Hardware
 
 - **Microcontroller:** STM32F401CEU6 (Black Pill)
-- **Sensor:** MPU6050 (6-axis IMU: Accelerometer + Gyroscope)
+- **Sensor:** MPU6050 6-axis IMU
+- **Communication:** I²C between STM32 and MPU6050
+- **USB:** USB CDC virtual serial port
+
+### Software
+
 - **Firmware:** C++ / Arduino framework via PlatformIO
-- **Backend:** Python (FastAPI, PySerial, WebSockets)
-- **Frontend:** HTML5, Vanilla JavaScript, Three.js (WebGL)
+- **Backend:** Python, FastAPI, PySerial, WebSockets
+- **Frontend:** HTML5, Vanilla JavaScript, Three.js
 
-### The Pipeline
+## System Pipeline
 
-1. **Sense:** The STM32 reads raw accelerometer and gyroscope data from the MPU6050 via I²C at 400 kHz.
-2. **Compute:** The firmware calculates orientation using two simultaneous methods (Trigonometry & Madgwick Filter) on a non-blocking 100 Hz loop.
-3. **Transmit:** Data is serialized into JSON and sent over a USB CDC virtual serial port (115200 baud).
-4. **Route:** A Python backend reads the serial stream and broadcasts it through WebSockets.
-5. **Render:** A Three.js frontend receives the WebSocket data and rotates two 3D models in near real time.
+```text
+MPU6050
+   │
+   │ I²C @ 400 kHz
+   ▼
+STM32F401CEU6
+   │
+   │ Orientation computation
+   │ ├── Direct trigonometry
+   │ └── Madgwick filter
+   │
+   │ JSON over USB CDC
+   ▼
+Python / FastAPI Backend
+   │
+   │ WebSocket
+   ▼
+Three.js Browser Dashboard
+   │
+   ├── Trigonometric orientation
+   └── Madgwick orientation
+```
 
----
+## Firmware
 
-## 🛠️ Hardware Setup
+The STM32 firmware runs a simple three-state system:
 
-### Wiring Diagram
+```text
+INIT ───────────────► RUNNING
+ │                       │
+ │ sensor failure        │ repeated read failure
+ ▼                       ▼
+ERROR ◄──────────────────┘
+```
+
+### Sensor Interface
+
+The MPU6050 communicates with the STM32 through hardware I²C:
 
 | MPU6050 Pin | STM32 Pin | Description |
-|-------------|-----------|-------------|
-| **VCC** | **3V3** | 3.3 V Power Supply |
-| **GND** | **GND** | Common Ground |
-| **SCL** | **PB6** | I²C Clock |
-| **SDA** | **PB7** | I²C Data |
-| **AD0** | *Unconnected* | Defaults to I²C address `0x68` |
+|---|---|---|
+| VCC | 3V3 | 3.3 V supply |
+| GND | GND | Common ground |
+| SCL | PB6 | I²C clock |
+| SDA | PB7 | I²C data |
+| AD0 | Unconnected | Default address `0x68` |
 
-> **Note:** Always power the GY-521 (MPU6050) module from the STM32's **3V3** pin to ensure compatible logic voltage levels.
+The I²C bus is configured for **400 kHz Fast Mode**.
 
----
+### Timing
 
-## 🧮 Two Methods of Orientation Computation
+The main loop targets **100 Hz** using a 10 ms timing gate.
 
-A primary objective of this project is demonstrating **why sensor fusion is necessary** for reliable orientation estimation.
+Instead of assuming a perfectly fixed time step, the firmware measures the actual elapsed time between loop iterations and passes that value to the Madgwick filter. This accounts for small timing variations during sensor acquisition and processing.
 
-### 1. Direct Trigonometry (Accelerometer Only)
 
-**How it works**
+### Error Handling
 
-Uses `atan2()` on the gravity vector to compute roll and pitch directly from accelerometer measurements.
+MPU6050 read failures are retried before the firmware attempts to reinitialize the sensor.
 
-**Advantages**
+If the sensor cannot be recovered after repeated failures, the system enters an error state and uses the onboard LED to indicate the failure.
 
-- Simple mathematics
-- No accumulated drift over time
+## Orientation Estimation
 
-**Limitations**
+### 1. Direct Trigonometry
+
+The first method uses only accelerometer measurements.
+
+Roll and pitch are calculated from the gravity vector using `atan2()`:
+
+```text
+roll  = atan2(ay, az)
+
+pitch = atan2(-ax, sqrt(ay² + az²))
+```
+
+#### Advantages
+
+- Simple and computationally lightweight
+- Does not accumulate gyroscope drift
+- Easy to interpret mathematically
+
+#### Limitations
 
 - Sensitive to movement and vibration
-- Cannot determine yaw without an external heading reference (magnetometer)
+- Assumes acceleration is dominated by gravity
+- Cannot determine yaw without an external heading reference such as a magnetometer
 
----
+### 2. Madgwick Filter
 
-### 2. Madgwick Filter (Sensor Fusion)
+The second method combines accelerometer and gyroscope measurements using a quaternion-based Madgwick filter.
 
-**How it works**
+The gyroscope provides responsive rotational information while the accelerometer provides a gravity reference for correcting long-term drift.
 
-Integrates gyroscope measurements for smooth, responsive orientation updates while continuously correcting drift using accelerometer data through a quaternion-based gradient descent algorithm.
+The firmware outputs:
 
-**Advantages**
+- Roll
+- Pitch
+- Yaw
 
-- Smooth and responsive motion tracking
-- More resistant to short-term vibrations
-- Quaternion representation avoids gimbal lock
+Quaternion representation also avoids the gimbal-lock limitations associated with directly representing orientation using Euler angles internally.
 
-**Limitations**
+Without a magnetometer, yaw remains subject to long-term drift.
 
-- More computationally intensive
-- Yaw slowly drifts over time without a magnetometer
+## Data Flow
 
----
+The firmware sends orientation data as compact JSON packets over the STM32 USB CDC serial connection:
 
-## 💻 Installation & Quick Start
+```json
+{
+  "tr": 0.00,
+  "tp": 0.00,
+  "mr": 0.00,
+  "mp": 0.00,
+  "my": 0.00
+}
+```
+
+Where:
+
+- `tr` — trigonometric roll
+- `tp` — trigonometric pitch
+- `mr` — Madgwick roll
+- `mp` — Madgwick pitch
+- `my` — Madgwick yaw
+
+The FastAPI backend reads the serial stream in a background task and broadcasts each valid reading to all connected browser clients through WebSockets.
+
+A REST endpoint at `/api/latest` is also provided for retrieving the most recent reading.
+
+## Backend Architecture
+
+The backend acts as a small real-time data pipeline:
+
+```text
+STM32
+  │
+  │ USB Serial
+  ▼
+Serial Reader
+  │
+  │ latest reading
+  ▼
+FastAPI
+  │
+  ├── WebSocket /ws
+  │      └── Browser clients
+  │
+  └── REST /api/latest
+```
+
+Blocking serial reads are executed outside the asyncio event loop so that WebSocket connections can continue to be handled concurrently.
+
+The backend automatically searches for the STMicroelectronics USB device by vendor ID and falls back to `/dev/ttyACM0` if automatic detection does not find a matching port.
+
+## Dashboard
+
+The browser dashboard uses Three.js to render two synchronized 3D models:
+
+- **Direct Trigonometry:** roll + pitch
+- **Madgwick Filter:** roll + pitch + yaw
+
+Numeric angle readouts are displayed below each visualization.
+
+The dashboard automatically reconnects to the WebSocket if the backend connection is interrupted.
+
+## Installation
 
 ### 1. Clone the Repository
 
@@ -90,18 +201,16 @@ git clone https://github.com/khaled-hoshan/tilt-tracker.git
 cd tilt-tracker
 ```
 
----
-
 ### 2. Flash the Firmware
 
-Install PlatformIO, then run:
+Install PlatformIO, then:
 
 ```bash
 cd firmware
 pio run --target upload
 ```
 
----
+The project is configured to use the STM32 USB DFU bootloader.
 
 ### 3. Start the Backend
 
@@ -118,63 +227,75 @@ source venv/bin/activate
 # Windows
 # venv\Scripts\activate
 
-pip install pyserial fastapi uvicorn websockets
+pip install -r requirements.txt
 
 uvicorn main:app --reload --port 8000
 ```
 
----
-
 ### 4. Open the Dashboard
 
-Open your browser and navigate to:
+Open:
 
-```
+```text
 http://localhost:8000
 ```
 
-Ensure the STM32 is connected via USB. The backend will automatically detect the STMicroelectronics USB CDC device and begin streaming orientation data to the dashboard.
+Connect the STM32 to the computer through USB. The backend will detect the STM32 serial device and begin streaming orientation data.
 
----
+## Error Indication
 
-## 🛑 Error Handling & LED Status
-
-The STM32 firmware uses the onboard LED (PC13) to indicate system status.
+The STM32 onboard LED (PC13) indicates system state:
 
 | LED State | Meaning |
-|-----------|---------|
-| **Off** | Initialization in progress |
-| **Solid On** | System operating normally and streaming data |
-| **Blinking** | Fatal error (e.g., MPU6050 communication failure or I²C error) |
+|---|---|
+| Off | Initialization in progress / inactive |
+| Solid On | System running normally |
+| Blinking | Fatal sensor or communication error |
 
----
-
-## 📂 Project Structure
+## Project Structure
 
 ```text
 tilt-tracker/
-├── firmware/          # STM32 firmware (PlatformIO)
-├── backend/           # FastAPI + Serial + WebSocket server
-├── frontend/          # HTML, JavaScript, Three.js dashboard
+├── firmware/
+│   ├── include/
+│   │   ├── madgwick.h
+│   │   └── mpu6050.h
+│   ├── src/
+│   │   ├── madgwick.cpp
+│   │   ├── main.cpp
+│   │   └── mpu6050.cpp
+│   ├── lib/
+│   └── platformio.ini
+├── backend/
+│   ├── main.py
+│   └── requirements.txt
+├── frontend/
+│   └── index.html
 ├── README.md
 └── LICENSE
 ```
 
----
+## Technologies
 
-## 🎯 Features
+- C++
+- Arduino Framework
+- PlatformIO
+- STM32F401CEU6
+- MPU6050
+- I²C
+- Python
+- FastAPI
+- PySerial
+- WebSockets
+- HTML5
+- JavaScript
+- Three.js
+- WebGL
+- Quaternion-based sensor fusion
+- Madgwick filter
 
-- Real-time IMU visualization
-- Side-by-side comparison of two orientation estimation methods
-- Non-blocking embedded firmware running at 100 Hz
-- USB serial communication using JSON packets
-- FastAPI backend with WebSocket broadcasting
-- Interactive Three.js 3D visualization
-- Automatic serial device detection
-- Onboard LED diagnostic status indicator
+## Academic Context
 
----
+Developed as part of a fourth-year Computer Engineering project.
 
-## 📄 License
-
-This project was developed as part of a fourth-year Computer Engineering course. You are welcome to use, modify, and fork it for educational and personal projects.
+The project combines embedded systems, sensor interfacing, orientation estimation, real-time communication, backend processing, and browser-based visualization.
