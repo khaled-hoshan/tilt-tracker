@@ -192,6 +192,10 @@ Numeric angle readouts are displayed below each visualization.
 
 The dashboard automatically reconnects to the WebSocket if the backend connection is interrupted.
 
+## Demo
+
+![tilt tracker Demo](demo/tilt-tracker-demo.mp4)
+
 ## Installation
 
 ### 1. Clone the Repository
@@ -256,6 +260,7 @@ The STM32 onboard LED (PC13) indicates system state:
 
 ```text
 tilt-tracker/
+|--demo/ tilt-tracker-demo.mp4
 ├── firmware/
 │   ├── include/
 │   │   ├── madgwick.h
