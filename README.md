@@ -262,7 +262,6 @@ The STM32 onboard LED (PC13) indicates system state:
 
 ```text
 tilt-tracker/
-|--demo/ tilt-tracker-demo.mp4
 ├── firmware/
 │   ├── include/
 │   │   ├── madgwick.h
@@ -278,6 +277,9 @@ tilt-tracker/
 │   └── requirements.txt
 ├── frontend/
 │   └── index.html
+├── demo/
+│    ├── tilt-tracker-demo.gif
+│    └── tilt-tracker-demo.mp4
 ├── README.md
 └── LICENSE
 ```
