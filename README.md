@@ -194,7 +194,7 @@ The dashboard automatically reconnects to the WebSocket if the backend connectio
 
 ## Demo
 
-![tilt tracker Demo](demo/tilt-tracker-demo.mp4)
+![tilt tracker Demo](demo/tilt-tracker-demo.gif)
 
 ## Installation
 
